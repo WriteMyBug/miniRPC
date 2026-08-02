@@ -34,14 +34,15 @@ void RpcServiceNode::registerService(google::protobuf::Service* service) {
 }
 
 void RpcServiceNode::start() {
-  server_.start();
-  registerSelf();
+  server_.start();     // 先启动 RPC 服务
+  registerSelf();      // 再同步注册（注册成功才算正式上线）
   heartbeatThread_ = std::thread([this] { heartbeatLoop(); });
   LOG_INFO << "RpcServiceNode[" << nodeName_ << "] started, heartbeat every "
            << heartbeatIntervalMs_ << "ms";
 }
 
 void RpcServiceNode::stopHeartbeat() {
+  // 只停心跳不注销 = 模拟"进程崩溃"：注册中心会在超时后把节点剔除。
   stop_ = true;
   cv_.notify_all();
   if (heartbeatThread_.joinable()) {
@@ -92,6 +93,7 @@ void RpcServiceNode::heartbeatLoop() {
   minirpc::registry::RegistryService::Stub stub(&channel);
   while (!stop_) {
     {
+      // 每个周期向注册中心报一次平安，刷新节点的 lastHeartbeat。
       RpcController ctrl;
       minirpc::registry::HeartbeatRequest req;
       req.set_service_name(serviceName_);
@@ -106,10 +108,10 @@ void RpcServiceNode::heartbeatLoop() {
       }
     }
     std::unique_lock<std::mutex> lock(cvMutex_);
+    // 条件变量等待 interval：stop 时能立即醒来退出，不必等满一个周期。
     cv_.wait_for(lock, std::chrono::milliseconds(heartbeatIntervalMs_),
                  [this] { return stop_.load(); });
   }
 }
 
 }  // namespace minirpc
-

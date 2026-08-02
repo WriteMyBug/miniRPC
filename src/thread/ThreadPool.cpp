@@ -32,6 +32,8 @@ void ThreadPool::Log(LogLevel level, const std::string& msg) {
 ThreadPool::ThreadPool() = default;
 
 ThreadPool::~ThreadPool() {
+  // 关闭步骤：置停止标志 -> 唤醒所有等待线程 -> 等线程全部退出。
+  // 等待谓词是"线程集合为空"，防止析构后工作线程还在访问成员。
   isRunning_ = false;
   Log(LogLevel::kInfo, "===== ThreadPool Stopped =====");
   notEmpty_.notify_all();
@@ -66,6 +68,7 @@ void ThreadPool::SetLogEnabled(bool enabled) {
 bool ThreadPool::enqueueTask(int priority, std::function<void()> fn,
                              std::chrono::milliseconds timeout) {
   std::unique_lock<std::mutex> lock(taskQueueMutex_);
+  // 队列满时最多等 timeout；等不到就返回 false（submit 会抛异常/trySubmitFor 返回空）。
   if (!notFull_.wait_for(lock, timeout,
                          [this] {
                            return taskQueueSize_ < maxTaskQueueSize_ ||
@@ -78,8 +81,9 @@ bool ThreadPool::enqueueTask(int priority, std::function<void()> fn,
   }
   taskQueue_.push({priority, std::move(fn)});
   taskQueueSize_++;
-  notEmpty_.notify_all();
+  notEmpty_.notify_all();  // 唤醒一个/多个工作线程去取任务
 
+  // cached 模式：任务堆积且有空闲线程配额时动态扩线程。
   if (mode_ == PoolMode::kCached && taskQueueSize_ > idleThreadCount_ &&
       currentThreadCount_ < maxThreadCount_) {
     std::ostringstream oss;
@@ -114,6 +118,7 @@ void ThreadPool::WorkerThread() {
     std::function<void()> taskFn;
     {
       std::unique_lock<std::mutex> lock(taskQueueMutex_);
+      // 队列空则等待；谓词包含 !isRunning_ 保证关闭时能退出等待。
       while (taskQueueSize_ == 0) {
         if (!waitForWork(lock, [this]() {
               return taskQueueSize_ > 0 || !isRunning_;
@@ -127,6 +132,7 @@ void ThreadPool::WorkerThread() {
       if (!isRunning_) break;
 
       idleThreadCount_--;
+      // 取优先级最高的任务（priority_queue 堆顶）。
       taskFn = std::move(const_cast<PrioritizedTask&>(taskQueue_.top()).func);
       taskQueue_.pop();
       taskQueueSize_--;
@@ -135,8 +141,9 @@ void ThreadPool::WorkerThread() {
 
     if (taskFn) {
       try {
-        taskFn();
+        taskFn();  // 执行用户任务
       } catch (const std::exception& e) {
+        // 任务异常不能让工作线程死掉：记录日志，异常通过 future 传给调用方。
         Log(LogLevel::kError,
             std::string("Unhandled exception in task: ") + e.what());
       } catch (...) {
@@ -204,6 +211,7 @@ void ThreadPool::CreateThread() {
   }
   std::thread t([this] { WorkerThread(); });
   const std::thread::id threadId = t.get_id();
+  // 先注册 id 再 detach（修复原实现竞态：先 detach 可能让析构死等，见 decisions D1）。
   {
     std::unique_lock<std::mutex> lock(threadSetMutex_);
     threads_.insert(threadId);
@@ -230,6 +238,7 @@ void ThreadPool::threadExit(std::thread::id threadId) {
 void ThreadPool::runPendingCallbacks() {
   std::queue<std::function<void()>> pending;
   {
+    // 整队 swap 出来再执行：回调里可能又投递新回调，避免死锁。
     std::lock_guard<std::mutex> lk(callbackQueueMutex_);
     pending.swap(callbackQueue_);
   }
@@ -240,4 +249,3 @@ void ThreadPool::runPendingCallbacks() {
 }
 
 }  // namespace minirpc
-

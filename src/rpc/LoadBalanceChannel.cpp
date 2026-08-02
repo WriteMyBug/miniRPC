@@ -40,6 +40,7 @@ bool LoadBalanceChannel::needRefresh() const {
 }
 
 bool LoadBalanceChannel::refreshNodes() {
+  // 通过注册中心 Discover 拉取存活节点，重建轮询计数与一致性哈希环。
   RpcController ctrl;
   minirpc::registry::DiscoverRequest req;
   req.set_service_name(serviceName_);
@@ -61,7 +62,7 @@ bool LoadBalanceChannel::refreshNodes() {
   }
   roundRobin_.setNodeCount(nodes_.size());
   consistentHash_.setNodes(keys);
-  lastRefresh_ = std::chrono::steady_clock::now();
+  lastRefresh_ = std::chrono::steady_clock::now();  // 记录刷新时间，供 TTL 判断
   LOG_INFO << "LoadBalanceChannel: service " << serviceName_ << " has "
            << nodes_.size() << " node(s)";
   return true;
@@ -72,12 +73,13 @@ std::string LoadBalanceChannel::selectNodeKey(const std::string& hashKey) {
     return {};
   }
   if (type_ == BalanceType::kConsistentHash && !hashKey.empty()) {
+    // 一致性哈希：用请求内容当 key，同一请求稳定落在同一节点。
     const std::string key = consistentHash_.selectNode(hashKey);
     if (!key.empty()) {
       return key;
     }
   }
-  return nodeKeyOf(nodes_[roundRobin_.next() % nodes_.size()]);
+  return nodeKeyOf(nodes_[roundRobin_.next() % nodes_.size()]);  // 轮询取模
 }
 
 std::string LoadBalanceChannel::selectNodeKeyForRetry(
@@ -99,7 +101,7 @@ minirpc::RpcChannel* LoadBalanceChannel::channelFor(
     const std::string& nodeKey) {
   const auto it = channels_.find(nodeKey);
   if (it != channels_.end()) {
-    return it->second.get();
+    return it->second.get();  // 每个节点复用一条连接，避免频繁建连
   }
   const size_t colon = nodeKey.rfind(':');
   const std::string host = nodeKey.substr(0, colon);
@@ -125,6 +127,7 @@ void LoadBalanceChannel::CallMethod(
     refreshNodes();
   }
   if (nodes_.empty()) {
+    // 注册中心没有可用节点：直接报 kNoService，不进入调用流程。
     failController(controller, ErrorCode::kNoService,
                    "no available node for service: " + serviceName_);
     if (done != nullptr) {
@@ -146,7 +149,7 @@ void LoadBalanceChannel::CallMethod(
     minirpc::RpcChannel* channel = channelFor(nodeKey);
     channel->CallMethod(method, controller, request, response, done);
     if (controller == nullptr || !controller->Failed()) {
-      return;
+      return;  // 调用成功
     }
     auto* rc = dynamic_cast<RpcController*>(controller);
     const ErrorCode code = rc ? rc->errorCode() : ErrorCode::kUnknown;
@@ -158,6 +161,7 @@ void LoadBalanceChannel::CallMethod(
       return;
     }
     failedNodeKey_ = nodeKey;
+    // 连接级失败：节点可能已下线，先刷新列表再换一个节点重试。
     refreshNodes();  // 节点可能已下线，刷新后再换节点
     if (nodes_.size() <= 1) {
       return;

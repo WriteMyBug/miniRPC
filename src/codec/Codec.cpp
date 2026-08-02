@@ -56,10 +56,12 @@ void Codec::encode(const ProtocolMessage& msg, Buffer* out) {
 }
 
 std::optional<ProtocolMessage> Codec::tryDecode(Buffer* in) {
+  // 半包处理核心：数据不够时"只看不拿"（peek），不消费任何字节。
   if (in->readableBytes() < kHeaderSize) {
     return std::nullopt;
   }
   const char* p = in->peek();
+  // 魔数不对说明对端发了脏数据/连错端口，直接报错让上层断开。
   if (readU32(p) != kMagic) {
     throw std::runtime_error("Codec: invalid magic number");
   }
@@ -79,14 +81,15 @@ std::optional<ProtocolMessage> Codec::tryDecode(Buffer* in) {
   if (h.bodyLen > kMaxBodySize) {
     throw std::runtime_error("Codec: body length exceeds limit");
   }
+  // 头齐了但 body 没到齐：仍然不消费，等下一次 readFd 攒够。
   if (in->readableBytes() < kHeaderSize + h.bodyLen) {
     return std::nullopt;  // 半包：等剩余数据
   }
 
+  // 数据齐了：先消费头部再取 body，Buffer 游标前移。
   in->retrieve(kHeaderSize);
   msg.body = in->retrieveAsString(h.bodyLen);
   return msg;
 }
 
 }  // namespace minirpc
-

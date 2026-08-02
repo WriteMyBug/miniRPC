@@ -55,6 +55,7 @@ void RpcServer::start() {
 
 void RpcServer::onMessage(const TcpConnectionPtr& conn, Buffer* buffer) {
   try {
+    // 拆包在 loop 线程：Buffer 只属于 loop 线程，不能共享给线程池。
     while (auto msgOpt = Codec::tryDecode(buffer)) {
       ProtocolMessage msg = std::move(*msgOpt);
       if (msg.header.type != static_cast<uint8_t>(MessageType::kRequest)) {
@@ -62,6 +63,7 @@ void RpcServer::onMessage(const TcpConnectionPtr& conn, Buffer* buffer) {
         continue;
       }
       try {
+        // 业务处理下沉线程池；conn 用 shared_ptr 捕获保证任务执行期间连接存活。
         pool_->submit([this, conn, msg = std::move(msg)]() mutable {
           handleRequest(conn, std::move(msg));
         });
@@ -78,6 +80,7 @@ void RpcServer::onMessage(const TcpConnectionPtr& conn, Buffer* buffer) {
 
 void RpcServer::handleRequest(const TcpConnectionPtr& conn,
                               ProtocolMessage requestMsg) {
+  // 以下全部在线程池线程执行（可能同时处理多个请求）。
   internal::RpcRequest envelope;
   if (!envelope.ParseFromString(requestMsg.body)) {
     sendError(conn, requestMsg.header.seq, ErrorCode::kInvalidArgument,
@@ -85,6 +88,7 @@ void RpcServer::handleRequest(const TcpConnectionPtr& conn,
     return;
   }
   const std::string& methodFullName = envelope.method();
+  // "package.Service.Method" 取最后一个点切分服务名与方法名。
   const size_t dot = methodFullName.find_last_of('.');
   if (dot == std::string::npos || dot == 0 ||
       dot + 1 >= methodFullName.size()) {
@@ -109,6 +113,7 @@ void RpcServer::handleRequest(const TcpConnectionPtr& conn,
     return;
   }
 
+  // 反射：运行时根据方法描述符创建对应请求/响应类型，框架不认识业务消息也能处理。
   std::unique_ptr<google::protobuf::Message> request(
       service->GetRequestPrototype(method).New());
   if (!request->ParseFromString(envelope.request())) {
@@ -120,11 +125,13 @@ void RpcServer::handleRequest(const TcpConnectionPtr& conn,
       service->GetResponsePrototype(method).New());
 
   RpcController controller;
+  // done=nullptr 表示同步调用：方法返回时结果已经就绪。
   service->CallMethod(method, &controller, request.get(), response.get(),
                       nullptr);
 
   internal::RpcResponse resp;
   if (controller.Failed()) {
+    // 服务方法主动 SetFailed：错误码 + 错误文本走响应信封。
     resp.set_error_code(static_cast<int32_t>(controller.errorCode()));
     resp.set_error_message(controller.ErrorText());
   } else {
@@ -150,7 +157,7 @@ void RpcServer::sendEnvelope(const TcpConnectionPtr& conn, uint64_t seq,
   msg.header.magic = kMagic;
   msg.header.version = kProtocolVersion;
   msg.header.type = static_cast<uint8_t>(MessageType::kResponse);
-  msg.header.seq = seq;
+  msg.header.seq = seq;  // 回同一 seq，客户端按它匹配请求
   msg.body = std::move(body);
   Buffer out;
   Codec::encode(msg, &out);

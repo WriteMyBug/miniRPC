@@ -48,6 +48,7 @@ void RegistryServiceImpl::purgeExpired() {
   for (auto svcIt = services_.begin(); svcIt != services_.end();) {
     auto& nodes = svcIt->second;
     for (auto it = nodes.begin(); it != nodes.end();) {
+      // 心跳超时 = 判定节点"死亡"，从注册表删除（故障剔除核心）。
       if (now - it->second.lastHeartbeat > heartbeatTimeout_) {
         LOG_WARN << "Registry: evict stale node "
                  << svcIt->first << "@" << it->first;
@@ -65,6 +66,7 @@ void RegistryServiceImpl::purgeExpired() {
 }
 
 void RegistryServiceImpl::evictionLoop() {
+  // 后台剔除线程：每 500ms 扫一次过期节点，与请求处理互不阻塞。
   while (!stopEviction_) {
     std::this_thread::sleep_for(kEvictionIntervalMs);
     if (stopEviction_) {
@@ -84,6 +86,7 @@ void RegistryServiceImpl::Register(
   response->set_error_code(okCode());
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    // 注册 = 写入/覆盖该服务下的节点，并记下当前时间作为首次心跳。
     NodeEntry entry{request->node(), std::chrono::steady_clock::now()};
     services_[request->service_name()][nodeKey(request->node())] =
         std::move(entry);
@@ -161,9 +164,11 @@ void RegistryServiceImpl::Heartbeat(
   const auto svcIt = services_.find(request->service_name());
   const std::string key = nodeKey(request->node());
   if (svcIt == services_.end() || svcIt->second.count(key) == 0) {
+    // 没注册过就心跳：拒绝（节点必须先 Register）。
     response->set_error_code(errCode());
     response->set_error_message("node not registered");
   } else {
+    // 心跳只刷新时间戳，不重复写入整条节点信息。
     svcIt->second.at(key).lastHeartbeat = std::chrono::steady_clock::now();
     response->set_error_code(okCode());
   }

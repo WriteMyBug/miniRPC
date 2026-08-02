@@ -39,6 +39,7 @@ bool RpcChannel::connect() {
   if (fd_ >= 0) {
     return true;
   }
+  // 阻塞式 connect：本地回环/内网连接通常立即成功；失败时 errno 直接可见。
   const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
   if (fd < 0) {
     return false;
@@ -55,6 +56,7 @@ bool RpcChannel::connect() {
 bool RpcChannel::sendAll(const char* data, size_t len) {
   size_t sent = 0;
   while (sent < len) {
+    // 阻塞 socket 的 send 可能只发一部分，循环发完为止。
     const ssize_t n = ::send(fd_, data + sent, len - sent, 0);
     if (n < 0) {
       if (errno == EINTR) {
@@ -77,6 +79,7 @@ void RpcChannel::CallMethod(const google::protobuf::MethodDescriptor* method,
                             google::protobuf::Closure* done) {
   std::lock_guard<std::mutex> lock(ioMutex_);
   if (controller != nullptr) {
+    // 每次调用先 Reset，清掉上一次失败/超时残留的标记。
     controller->Reset();
   }
 
@@ -103,7 +106,7 @@ void RpcChannel::CallMethod(const google::protobuf::MethodDescriptor* method,
     msg.header.magic = kMagic;
     msg.header.version = kProtocolVersion;
     msg.header.type = static_cast<uint8_t>(MessageType::kRequest);
-    msg.header.seq = nextSeq_++;
+    msg.header.seq = nextSeq_++;  // 每次尝试都是新 seq：旧响应对不上号，不会串包
     msg.body = envelopeBytes;
     Buffer out;
     Codec::encode(msg, &out);
@@ -119,7 +122,7 @@ void RpcChannel::CallMethod(const google::protobuf::MethodDescriptor* method,
     if (result != CallResult::kTimeout) {
       break;
     }
-    // 超时：若还有重试机会，以新序列号重发
+    // 只有超时才会重试（连接关闭/系统错误/服务端明确报错都不重试）。
   }
 
   if (done != nullptr) {
@@ -130,6 +133,7 @@ void RpcChannel::CallMethod(const google::protobuf::MethodDescriptor* method,
 RpcChannel::CallResult RpcChannel::waitResponse(
     uint64_t seq, int timeoutMs, google::protobuf::Message* response,
     google::protobuf::RpcController* controller) {
+  // 轮询等待：poll 剩余时间 -> 读数据 -> tryDecode -> 按 seq 匹配。
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
   for (;;) {
@@ -168,6 +172,7 @@ RpcChannel::CallResult RpcChannel::waitResponse(
       return CallResult::kClosed;
     }
     try {
+      // 一次可能读到多条（粘包），循环解析；seq 对不上的一律丢弃。
       while (auto msgOpt = Codec::tryDecode(&inputBuffer_)) {
         const ProtocolMessage& m = *msgOpt;
         if (m.header.type == static_cast<uint8_t>(MessageType::kResponse) &&
@@ -180,6 +185,7 @@ RpcChannel::CallResult RpcChannel::waitResponse(
           }
           const int32_t code = resp.error_code();
           if (code != static_cast<int32_t>(ErrorCode::kOk)) {
+            // 服务端已明确报错（如除零）：这是"成功完成的失败调用"，不重试。
             failController(controller, static_cast<ErrorCode>(code),
                            resp.error_message().empty()
                                ? "rpc call failed"

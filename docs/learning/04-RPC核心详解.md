@@ -137,3 +137,15 @@ service->CallMethod(method, &controller, request.get(), response.get(), nullptr)
 - 练习 B（必做，1h）：给 proto 加一个新方法 `Pow`（a 的 b 次方，b 为整数），改服务端实现、客户端调用、跑通。**这就是"新增服务不用改框架"的亲身验证。**
 - 练习 C（选做）：把 maxRetries 改成 5，对黑洞服务端（`sink`）调用一次，观察总耗时约等于 5×超时。
 
+## 7. 源码阅读清单（阶段 4 对照看）
+
+| 知识点 | 打开文件 | 重点函数/位置 | 看什么 |
+|---|---|---|---|
+| 服务注册表 | src/rpc/ServiceRegistry.cpp | `addService()` / `findService()` | 就是 map + 锁，30 行没有魔法 |
+| 服务端收包 | src/rpc/RpcServer.cpp | `onMessage()` | 循环 tryDecode 拆包；每个完整报文 submit 到线程池 |
+| 服务端分发 | src/rpc/RpcServer.cpp | `handleRequest()` | 切 method 全名 → 查服务/方法 → 反射 New/Parse → CallMethod |
+| 回包 | src/rpc/RpcServer.cpp | `sendEnvelope()` | 序列化 RpcResponse → 协议头(type=response, 同 seq) → conn->send |
+| 客户端调用 | src/rpc/RpcChannel.cpp | `CallMethod()` | 串行锁；每次尝试新 seq；失败分类（超时重试/其他不重试） |
+| 客户端等待 | src/rpc/RpcChannel.cpp | `waitResponse()` | poll 剩余时间 → readFd 攒 Buffer → 按 seq 匹配；旧 seq 响应丢弃 |
+| 控制器 | src/rpc/RpcController.cpp | `Reset()` / `SetFailed(ErrorCode, msg)` | 错误码扩展；Reset 保证重试不残留失败状态 |
+

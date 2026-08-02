@@ -67,17 +67,20 @@ void TcpConnection::sendInLoop(const std::string& message) {
   }
   ssize_t nwritten = 0;
   size_t remaining = message.size();
+  // 快速路径：输出缓冲为空且没在等写事件，直接 write 一次。
   if (!channel_->isWriting() && outputBuffer_.readableBytes() == 0) {
     nwritten = ::write(socket_.fd(), message.data(), message.size());
     if (nwritten >= 0) {
       remaining = message.size() - static_cast<size_t>(nwritten);
       if (remaining == 0) {
+        // 一次写完：通知写完成回调（可选）。
         if (writeCompleteCallback_) {
           writeCompleteCallback_(shared_from_this());
         }
         return;
       }
     } else {
+      // EAGAIN 说明内核发送缓冲区满了，剩余数据进输出缓冲等 EPOLLOUT。
       nwritten = 0;
       if (errno != EAGAIN && errno != EWOULDBLOCK) {
         LOG_ERROR << "TcpConnection::sendInLoop write failed: "
@@ -86,6 +89,7 @@ void TcpConnection::sendInLoop(const std::string& message) {
     }
   }
   if (remaining > 0) {
+    // 剩余部分进输出缓冲，并注册写事件（handleWrite 会继续发）。
     const char* start = message.data() + (message.size() - remaining);
     outputBuffer_.append(start, remaining);
     if (!channel_->isWriting()) {
@@ -118,12 +122,15 @@ void TcpConnection::handleRead() {
   int savedErrno = 0;
   const ssize_t n = inputBuffer_.readFd(socket_.fd(), &savedErrno);
   if (n > 0) {
+    // 有数据：交给用户回调（echo/RPC 业务从这里进入）。
     if (messageCallback_) {
       messageCallback_(shared_from_this(), &inputBuffer_);
     }
   } else if (n == 0) {
+    // 读到 0 = 对端关闭，触发关闭流程。
     handleClose();
   } else {
+    // EAGAIN 是正常（非阻塞下读空了），其余才是真错误。
     if (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK) {
       return;
     }
@@ -138,6 +145,7 @@ void TcpConnection::handleWrite() {
   if (!channel_->isWriting()) {
     return;
   }
+  // 尽量把输出缓冲写空；写空后关闭 EPOLLOUT，避免 busy loop。
   const ssize_t n =
       ::write(socket_.fd(), outputBuffer_.peek(), outputBuffer_.readableBytes());
   if (n > 0) {
@@ -155,9 +163,10 @@ void TcpConnection::handleWrite() {
 
 void TcpConnection::handleClose() {
   loop_->assertInLoopThread();
-  channel_->disableAll();
+  channel_->disableAll();  // 从 epoll 摘除，不再关心该 fd 的任何事件
   setState(State::kDisconnected);
   if (closeCallback_) {
+    // 通知 TcpServer 从连接表移除；shared_from_this 保证回调期间对象存活。
     closeCallback_(shared_from_this());
   }
 }

@@ -106,3 +106,13 @@ message RpcResponse { int32 error_code = 1; string error_message = 2;
 - 练习 B（必做，30min）：把 bodyLen 上限临时改成 10 字节，编一个 20 字节 body 的报文跑 codec_test，确认抛异常；改回来。
 - 练习 C（选做）：给协议头 flags 加"第 0 位 = 压缩"语义，在 encode/tryDecode 里读写出 flags，写一个断言验证。
 
+## 7. 源码阅读清单（阶段 3 对照看）
+
+| 知识点 | 打开文件 | 重点函数/位置 | 看什么 |
+|---|---|---|---|
+| 协议头布局 | include/minirpc/codec/Protocol.h | `struct ProtocolHeader` 与常量区 | 24 字节逐字段注释；static_assert 保证大小；kMaxBodySize 防恶意长度 |
+| 大端编码 | src/codec/Codec.cpp | `appendU16/U32/U64` | htonl/htons/htobe64 的用法；编码顺序与头部布局一一对应 |
+| 半包解码 | src/codec/Codec.cpp | `tryDecode()` | 三段式：头没齐→nullopt；头齐 body 没齐→nullopt；齐了才 retrieve |
+| 信封协议 | proto/rpc.proto | RpcRequest / RpcResponse | 为什么 body 里还要包一层（method 分发 + 错误码） |
+| 粘包消费 | tests/codec_test.cpp | 用例 3/4（粘包、任意切分） | 观察 while(tryDecode) 一条条消费的行为 |
+
