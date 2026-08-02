@@ -4,6 +4,15 @@
 
 基于 Linux epoll Reactor 模型、线程池与 Protobuf 序列化，从零实现服务注册/发现、负载均衡、超时重试与压测报告。详见 [计划书.md](计划书.md)。
 
+## 功能特性
+
+- **网络层**：epoll Reactor（LT）+ eventfd 唤醒 + Buffer（粘包/半包处理），单 Reactor 主线程 + 线程池处理业务。
+- **协议**：24 字节自定义协议头（魔数/版本/类型/序列号/长度）+ Protobuf 内部信封（RpcRequest/RpcResponse），Codec 与业务解耦。
+- **RPC**：Service 注册表（protobuf 反射分发）、RpcServer、同步 RpcChannel（seq 匹配 + 超时重试）、RpcController（错误码/错误文本）。
+- **注册中心**：Register/Discover/Heartbeat/Unregister，心跳超时剔除（注册中心本身是一个 RPC 服务）。
+- **负载均衡**：轮询 + 一致性哈希（虚拟节点），节点列表 TTL 刷新，连接级失败自动换节点重试。
+- **工程化**：CMake + protoc 自动生成、6 个测试目标、压测程序与报告、决策记录与面试 Q&A。
+
 ## 开发环境（WSL2 内直开）
 
 | 组件 | 版本 |
@@ -27,6 +36,13 @@ sudo apt install -y protobuf-compiler libprotobuf-dev valgrind
 ```bash
 cmake -B build
 cmake --build build -j
+```
+
+protobuf 默认开启（依赖 `protobuf-compiler` / `libprotobuf-dev`）。压测请用 Release 构建：
+
+```bash
+cmake -B build-rel -DCMAKE_BUILD_TYPE=Release
+cmake --build build-rel -j
 ```
 
 ## 运行 echo 示例
@@ -142,8 +158,8 @@ sequenceDiagram
 ## 压测
 
 ```bash
-./build/examples/calculator_server 8888 standalone 4
-./build/benchmark/benchmark 127.0.0.1 8888 40 500
+./build-rel/examples/calculator_server 8888 standalone 4
+./build-rel/benchmark/benchmark 127.0.0.1 8888 40 500
 ```
 
 实测（Release，WSL2 本机）：40 并发约 3.16 万 QPS，P99 2.6ms；服务端 CPU 约 1.3 核、内存约 6.6MB。完整数据与方法见 [benchmark/report.md](benchmark/report.md)。
@@ -167,16 +183,24 @@ minRPC/
 │   ├── net/       # EventLoop、EpollPoller、TcpServer、Buffer
 │   ├── thread/    # ThreadPool（任务队列 + 条件变量，复用自 cpp_learn）
 │   ├── codec/     # 协议头（24 字节）+ Protobuf 编解码
-│   └── rpc/       # RpcServer、RpcChannel、RpcController、ServiceRegistry
+│   ├── rpc/       # RpcServer、RpcChannel、RpcController、ServiceRegistry、负载均衡
+│   └── registry/  # RegistryServiceImpl（注册中心服务）
 ├── src/
 ├── proto/         # echo / calculator / rpc 信封 / registry proto（protoc 生成代码）
 ├── registry/      # 注册中心可执行程序（RegistryServiceImpl + registry_server）
 ├── examples/echo/ # echo 示例
-├── examples/rpc/  # RPC calculator/echo 示例
+├── examples/rpc/  # calculator、rpc_node、lb_client 示例
 ├── benchmark/     # 压测程序与报告
 ├── docs/          # 决策记录、面试 Q&A
 └── tests/         # 单元与集成测试
 ```
+
+## 文档
+
+- [计划书.md](计划书.md)：项目定位、里程碑与验收标准（4 周计划已完成）
+- [docs/decisions.md](docs/decisions.md)：关键设计决策记录（D1-D7）
+- [docs/interview-qa.md](docs/interview-qa.md)：面试 Q&A（网络/线程池/Codec/RPC/注册中心/负载均衡/压测）
+- [benchmark/report.md](benchmark/report.md)：压测方法、数据与结论
 
 ## 当前进度
 
@@ -204,3 +228,5 @@ minRPC/
 - [x] 压测程序与报告（40 并发 3.16 万 QPS，P99 2.6ms）
 - [x] docs/interview-qa.md 面试 Q&A
 - [ ] 异步客户端（可选加分项，留待后续）
+
+四周边计划（网络层 → 线程池/协议 → RPC 核心 → 注册中心/负载均衡/压测）已于 2026-08-02 全部完成。
