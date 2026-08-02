@@ -9,3 +9,7 @@ add_test(NAME threadpool_test COMMAND threadpool_test)
 add_executable(codec_test codec_test.cpp)
 target_link_libraries(codec_test PRIVATE minirpc)
 add_test(NAME codec_test COMMAND codec_test)
+
+add_executable(rpc_test rpc_test.cpp)
+target_link_libraries(rpc_test PRIVATE minirpc)
+add_test(NAME rpc_test COMMAND rpc_test)

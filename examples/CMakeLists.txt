@@ -6,3 +6,9 @@ target_link_libraries(echo_client PRIVATE minirpc)
 
 add_executable(echo_stress echo/echo_stress.cpp)
 target_link_libraries(echo_stress PRIVATE minirpc)
+
+add_executable(calculator_server rpc/calculator_server.cpp)
+target_link_libraries(calculator_server PRIVATE minirpc)
+
+add_executable(calculator_client rpc/calculator_client.cpp)
+target_link_libraries(calculator_client PRIVATE minirpc)

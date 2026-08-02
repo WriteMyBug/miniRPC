@@ -18,3 +18,15 @@
 - 理由：TLV 思路，长度字段天然解决粘包/半包；序列号供第 3 周超时重试去重；魔数/版本/长度上限防脏数据与恶意报文。
 - 影响：Codec 与业务协议解耦，body 直接承载 protobuf 序列化字节；RpcChannel/RpcServer 只需复用同一 Codec。
 
+## D3（2026-08-02）RPC 内部信封
+
+- 决策：协议头 body 内再包一层 protobuf 信封 `RpcRequest { method, request }` / `RpcResponse { error_code, error_message, response }`（proto/rpc.proto）。
+- 理由：method 分发信息与业务参数共用同一序列化体系；错误码/错误文本与成功数据统一走响应信封，客户端无需额外协议。
+- 影响：Codec 保持通用（只管 24 字节头 + body），RPC 层负责信封编解码与 Service 分发。
+
+## D4（2026-08-02）同步客户端通道设计
+
+- 决策：`RpcChannel` 使用阻塞 socket + poll 等待，同一通道的调用以互斥锁串行化；不做独立接收线程。
+- 理由：第 3 周目标是同步调用，串行 + 超时轮询实现最简单可靠；每个请求带唯一 seq，重试用新 seq 避免与旧响应混淆。
+- 影响：并发调用会被串行化（可接受）；第 4 周异步客户端（并发/回调）再引入独立接收线程或每连接事件循环。
+- 细节：重试仅针对超时（连接关闭/系统错误/服务端明确报错不重试）；每次尝试前 Reset controller，避免上次超时残留失败标记。

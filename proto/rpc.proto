@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package minirpc.internal;
+
+// RPC 内部信封：承载在 24 字节协议头之后的 body 中。
+
+message RpcRequest {
+  string method = 1;   // 完整方法名：package.Service.Method
+  bytes request = 2;   // 序列化后的请求消息
+}
+
+message RpcResponse {
+  int32 error_code = 1;     // 0 表示成功，非 0 见 ErrorCode
+  string error_message = 2; // 失败时的错误描述
+  bytes response = 3;       // 序列化后的响应消息（成功时有效）
+}
+

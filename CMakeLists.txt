@@ -13,6 +13,7 @@ endif()
 option(MINIRPC_ENABLE_PROTOBUF "Enable Protocol Buffers codec" ON)
 
 add_library(minirpc
+  src/common/ErrorCode.cpp
   src/common/Logger.cpp
   src/codec/Codec.cpp
   src/net/Buffer.cpp
@@ -23,6 +24,10 @@ add_library(minirpc
   src/net/Socket.cpp
   src/net/TcpConnection.cpp
   src/net/TcpServer.cpp
+  src/rpc/RpcChannel.cpp
+  src/rpc/RpcController.cpp
+  src/rpc/RpcServer.cpp
+  src/rpc/ServiceRegistry.cpp
   src/thread/ThreadPool.cpp
 )
 target_include_directories(minirpc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -31,6 +36,7 @@ target_compile_options(minirpc PRIVATE -Wall -Wextra -Wpedantic)
 if(MINIRPC_ENABLE_PROTOBUF)
   find_package(Protobuf REQUIRED)
   protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS
+    proto/rpc.proto
     proto/echo.proto
     proto/calculator.proto)
   # protoc 生成代码不受我们编译选项约束
