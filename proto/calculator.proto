@@ -13,9 +13,9 @@ message CalcRequest {
 message CalcResponse {
   double result = 1;
   string error = 2;
+  string server_id = 3;  // 处理该请求的节点标识（演示/压测用）
 }
 
 service CalculatorService {
   rpc Calc(CalcRequest) returns (CalcResponse);
 }
-

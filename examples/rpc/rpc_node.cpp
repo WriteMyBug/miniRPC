@@ -5,7 +5,7 @@
 #include "minirpc/net/EventLoop.h"
 #include "minirpc/net/InetAddress.h"
 #include "minirpc/rpc/RpcController.h"
-#include "minirpc/rpc/RpcServer.h"
+#include "minirpc/rpc/RpcServiceNode.h"
 
 #include "calculator.pb.h"
 #include "echo.pb.h"
@@ -28,6 +28,9 @@ class EchoServiceImpl : public minirpc::example::EchoService {
 
 class CalculatorServiceImpl : public minirpc::example::CalculatorService {
  public:
+  explicit CalculatorServiceImpl(std::string nodeName)
+      : nodeName_(std::move(nodeName)) {}
+
   void Calc(google::protobuf::RpcController* controller,
             const minirpc::example::CalcRequest* request,
             minirpc::example::CalcResponse* response,
@@ -57,37 +60,47 @@ class CalculatorServiceImpl : public minirpc::example::CalculatorService {
     } else {
       fail("unknown operator: " + op);
     }
+    response->set_server_id(nodeName_);
     if (done != nullptr) {
       done->Run();
     }
   }
+
+ private:
+  std::string nodeName_;
 };
 
-// 用法：calculator_server [port] [node_name] [pool_threads]
+// 用法：rpc_node [listen_port] [node_name] [registry_port] [heartbeat_ms]
 int main(int argc, char* argv[]) {
-  uint16_t port = 8888;
+  uint16_t port = 9001;
+  std::string name = "node";
+  uint16_t registryPort = 18800;
+  int heartbeatMs = 2000;
   if (argc > 1) {
     port = static_cast<uint16_t>(std::atoi(argv[1]));
   }
-  std::string nodeName = "standalone";
   if (argc > 2) {
-    nodeName = argv[2];
+    name = argv[2];
   }
-  size_t poolThreads = 4;
   if (argc > 3) {
-    poolThreads = static_cast<size_t>(std::atoi(argv[3]));
+    registryPort = static_cast<uint16_t>(std::atoi(argv[3]));
+  }
+  if (argc > 4) {
+    heartbeatMs = std::atoi(argv[4]);
   }
   Logger::instance().setLogLevel(LogLevel::kInfo);
   std::signal(SIGPIPE, SIG_IGN);
 
   EventLoop loop;
-  RpcServer server(&loop, InetAddress(port), "rpc-server");
-  server.setThreadPoolSize(poolThreads);
+  RpcServiceNode node(&loop, InetAddress(port), name,
+                      InetAddress("127.0.0.1", registryPort),
+                      "minirpc.example.CalculatorService", heartbeatMs,
+                      heartbeatMs * 3);
   EchoServiceImpl echoService;
-  CalculatorServiceImpl calcService;
-  server.registerService(&echoService);
-  server.registerService(&calcService);
-  server.start();
+  CalculatorServiceImpl calcService(name);
+  node.registerService(&echoService);
+  node.registerService(&calcService);
+  node.start();
   loop.loop();
   return 0;
 }

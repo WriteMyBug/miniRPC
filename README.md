@@ -80,15 +80,83 @@ echo 服务端已接入线程池：主 reactor 负责 IO 与分发，消息处�
 5. 执行结果打包为 `RpcResponse` 信封 + 协议头（type=response、相同 seq）回发。
 6. 客户端按 seq 匹配响应并反序列化填充；错误经 `RpcController`（错误码 + 错误文本）返回。
 
+## 架构
+
+```mermaid
+flowchart LR
+    App[客户端应用] --> LB[LoadBalanceChannel]
+    LB -->|轮询/一致性哈希| NodeA[服务节点 A]
+    LB -->|轮询/一致性哈希| NodeB[服务节点 B]
+    NodeA -->|注册/心跳| Reg[注册中心]
+    NodeB -->|注册/心跳| Reg
+    LB -.发现节点.-> Reg
+    subgraph 服务节点
+        Reactor[epoll Reactor] --> Pool[线程池]
+        Pool --> Codec[Codec 拆包]
+        Codec --> Svc[Service 注册表]
+    end
+```
+
+```mermaid
+sequenceDiagram
+    participant N as 服务节点
+    participant R as 注册中心
+    participant C as 客户端(LB通道)
+    N->>R: Register(service, node)
+    loop 每 N ms
+        N->>R: Heartbeat(service, node)
+    end
+    C->>R: Discover(service)
+    R-->>C: 存活节点列表
+    C->>N: RpcRequest(seq, method, body)
+    N-->>C: RpcResponse(seq, result)
+    Note over N,R: 节点宕机 → 心跳超时 → 注册中心剔除
+    C->>R: Discover(service)（TTL 刷新）
+    R-->>C: 仅剩存活节点
+```
+
+## 注册中心与负载均衡示例
+
+终端 1（注册中心）：
+
+```bash
+./build/registry/registry_server 18800
+```
+
+终端 2 / 3（两个服务节点，自动注册 + 心跳，心跳间隔 500ms）：
+
+```bash
+./build/examples/rpc_node 9001 node-a 18800 500
+./build/examples/rpc_node 9002 node-b 18800 500
+```
+
+终端 4（负载均衡客户端）：
+
+```bash
+./build/examples/lb_client 18800 20 rr   # 轮询
+./build/examples/lb_client 18800 20 ch   # 一致性哈希
+```
+
+故障剔除演示：杀掉 node-b 进程，等待心跳超时（默认 6s），lb_client 刷新后只剩 node-a，调用全部成功。
+
+## 压测
+
+```bash
+./build/examples/calculator_server 8888 standalone 4
+./build/benchmark/benchmark 127.0.0.1 8888 40 500
+```
+
+实测（Release，WSL2 本机）：40 并发约 3.16 万 QPS，P99 2.6ms；服务端 CPU 约 1.3 核、内存约 6.6MB。完整数据与方法见 [benchmark/report.md](benchmark/report.md)。
+
 ## 测试
 
 ```bash
 ctest --test-dir build --output-on-failure
 ```
 
-覆盖：Buffer 读写与拆包、ThreadPool 提交/并发/异常传播/优先级/回调、Codec 编解码回环（逐字节半包、任意切分、粘包、非法报文）、RPC 集成（正常调用、服务端业务错误、超时重试、连接拒绝）。
+覆盖：Buffer 读写与拆包、ThreadPool 提交/并发/异常传播/优先级/回调、Codec 编解码回环（逐字节半包、任意切分、粘包、非法报文）、RPC 集成（正常调用、业务错误、超时重试、连接拒绝）、负载均衡单测、双节点注册/发现/心跳剔除。
 
-> 注：`rpc_test` 需要创建 TCP socket，在受限沙箱中需放行网络或单独运行 `./build/tests/rpc_test`。
+> 注：`rpc_test` / `registry_test` 需要创建 TCP socket，在受限沙箱中需放行网络或单独运行 `./build/tests/rpc_test`、`./build/tests/registry_test`。
 
 ## 目录结构
 
@@ -101,12 +169,13 @@ minRPC/
 │   ├── codec/     # 协议头（24 字节）+ Protobuf 编解码
 │   └── rpc/       # RpcServer、RpcChannel、RpcController、ServiceRegistry
 ├── src/
-├── proto/         # echo / calculator / rpc 信封 proto（protoc 生成代码）
-├── registry/      # 简版注册中心（第 4 周）
+├── proto/         # echo / calculator / rpc 信封 / registry proto（protoc 生成代码）
+├── registry/      # 注册中心可执行程序（RegistryServiceImpl + registry_server）
 ├── examples/echo/ # echo 示例
 ├── examples/rpc/  # RPC calculator/echo 示例
-├── benchmark/     # 压测程序（第 4 周）
-└── tests/         # 单元测试
+├── benchmark/     # 压测程序与报告
+├── docs/          # 决策记录、面试 Q&A
+└── tests/         # 单元与集成测试
 ```
 
 ## 当前进度
@@ -128,3 +197,10 @@ minRPC/
 - [x] 内部信封 proto（RpcRequest/RpcResponse）+ 完整调用链路
 - [x] 超时重试（黑洞服务端验证：2 次尝试后 kTimeout）
 - [x] rpc_test 集成测试 + calculator 示例演示通过
+- [x] 注册中心（注册/发现/心跳剔除，RegistryServiceImpl）
+- [x] 轮询 + 一致性哈希负载均衡（loadbalancer_test 通过）
+- [x] RpcServiceNode 自动注册 + LoadBalanceChannel 故障转移
+- [x] 双节点故障剔除验收（registry_test 通过）+ 完整演示
+- [x] 压测程序与报告（40 并发 3.16 万 QPS，P99 2.6ms）
+- [x] docs/interview-qa.md 面试 Q&A
+- [ ] 异步客户端（可选加分项，留待后续）

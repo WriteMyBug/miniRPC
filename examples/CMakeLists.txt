@@ -12,3 +12,9 @@ target_link_libraries(calculator_server PRIVATE minirpc)
 
 add_executable(calculator_client rpc/calculator_client.cpp)
 target_link_libraries(calculator_client PRIVATE minirpc)
+
+add_executable(rpc_node rpc/rpc_node.cpp)
+target_link_libraries(rpc_node PRIVATE minirpc)
+
+add_executable(lb_client rpc/lb_client.cpp)
+target_link_libraries(lb_client PRIVATE minirpc)

@@ -1,7 +1,7 @@
 build/
+build-rel/
 *.o
 *.a
 *.so
 compile_commands.json
 .cache/
-

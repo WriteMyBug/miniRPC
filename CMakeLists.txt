@@ -28,6 +28,10 @@ add_library(minirpc
   src/rpc/RpcController.cpp
   src/rpc/RpcServer.cpp
   src/rpc/ServiceRegistry.cpp
+  src/rpc/LoadBalancer.cpp
+  src/rpc/LoadBalanceChannel.cpp
+  src/rpc/RpcServiceNode.cpp
+  src/registry/RegistryServiceImpl.cpp
   src/thread/ThreadPool.cpp
 )
 target_include_directories(minirpc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -37,6 +41,7 @@ if(MINIRPC_ENABLE_PROTOBUF)
   find_package(Protobuf REQUIRED)
   protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS
     proto/rpc.proto
+    proto/registry.proto
     proto/echo.proto
     proto/calculator.proto)
   # protoc 生成代码不受我们编译选项约束
@@ -48,5 +53,7 @@ if(MINIRPC_ENABLE_PROTOBUF)
 endif()
 
 add_subdirectory(examples)
+add_subdirectory(registry)
+add_subdirectory(benchmark)
 enable_testing()
 add_subdirectory(tests)

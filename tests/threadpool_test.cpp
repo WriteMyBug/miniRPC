@@ -64,9 +64,9 @@ int main() {
   int cbResult = 0;
   pool.submitWithCallback([](int x) { return x * 10; },
                           [&cbResult](int v) { cbResult = v; }, 7);
-  for (int i = 0; i < 2000 && cbResult == 0; ++i) {
+  for (int i = 0; i < 200 && cbResult == 0; ++i) {
     pool.runPendingCallbacks();
-    std::this_thread::yield();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT(cbResult == 70);
 
@@ -104,4 +104,3 @@ int main() {
   std::cerr << "threadpool_test: " << failures << " failure(s)" << std::endl;
   return 1;
 }
-

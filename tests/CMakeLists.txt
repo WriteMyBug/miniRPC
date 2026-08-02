@@ -13,3 +13,11 @@ add_test(NAME codec_test COMMAND codec_test)
 add_executable(rpc_test rpc_test.cpp)
 target_link_libraries(rpc_test PRIVATE minirpc)
 add_test(NAME rpc_test COMMAND rpc_test)
+
+add_executable(loadbalancer_test loadbalancer_test.cpp)
+target_link_libraries(loadbalancer_test PRIVATE minirpc)
+add_test(NAME loadbalancer_test COMMAND loadbalancer_test)
+
+add_executable(registry_test registry_test.cpp)
+target_link_libraries(registry_test PRIVATE minirpc)
+add_test(NAME registry_test COMMAND registry_test)
