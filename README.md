@@ -12,7 +12,8 @@
 | 编译器 | g++ 13.3.0 |
 | CMake | 3.28.3 |
 | git | 2.43.0 |
-| protobuf | 待安装（第 2 周 codec 模块使用） |
+| protobuf | protoc 3.21.12 + libprotobuf-dev（已安装） |
+| valgrind | 3.22.0（已安装） |
 
 安装依赖：
 
@@ -81,5 +82,4 @@ minRPC/
 - [x] Buffer（读写缓冲、粘包半包处理）
 - [x] TcpServer / TcpConnection 连接管理
 - [x] echo 示例（nc / 自写客户端均可回显）
-- [ ] 安装 protobuf（需要 sudo，等待用户执行）
-
+- [x] 安装 protobuf / valgrind（用户 sudo 安装，CMake 接入验证通过）
