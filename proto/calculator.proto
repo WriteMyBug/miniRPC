@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package minirpc.example;
+
+option cc_generic_services = true;
+
+message CalcRequest {
+  double a = 1;
+  double b = 2;
+  string op = 3;  // "+" "-" "*" "/"
+}
+
+message CalcResponse {
+  double result = 1;
+  string error = 2;
+}
+
+service CalculatorService {
+  rpc Calc(CalcRequest) returns (CalcResponse);
+}
+

@@ -4,3 +4,5 @@ target_link_libraries(echo_server PRIVATE minirpc)
 add_executable(echo_client echo/echo_client.cpp)
 target_link_libraries(echo_client PRIVATE minirpc)
 
+add_executable(echo_stress echo/echo_stress.cpp)
+target_link_libraries(echo_stress PRIVATE minirpc)

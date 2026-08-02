@@ -12,7 +12,7 @@
 | 编译器 | g++ 13.3.0 |
 | CMake | 3.28.3 |
 | git | 2.43.0 |
-| protobuf | protoc 3.21.12 + libprotobuf-dev（已安装） |
+| protobuf | protoc 3.21.12 + libprotobuf-dev（已安装，CMake 默认开启） |
 | valgrind | 3.22.0（已安装） |
 
 安装依赖：
@@ -49,11 +49,21 @@ printf 'hello minirpc\nworld\n' | ./build/examples/echo_client 127.0.0.1 8888
 nc 127.0.0.1 8888
 ```
 
+并发压力验证（N 个客户端 × M 条消息，校验回显一致）：
+
+```bash
+./build/examples/echo_stress 127.0.0.1 8888 16 50
+```
+
+echo 服务端已接入线程池：主 reactor 负责 IO 与分发，消息处理在工作线程执行。
+
 ## 测试
 
 ```bash
 ctest --test-dir build --output-on-failure
 ```
+
+覆盖：Buffer 读写与拆包、ThreadPool 提交/并发/异常传播/优先级/回调、Codec 编解码回环、逐字节半包、任意切分、粘包、非法报文。
 
 ## 目录结构
 
@@ -62,11 +72,11 @@ minRPC/
 ├── include/minirpc/
 │   ├── common/    # 日志、错误码、工具
 │   ├── net/       # EventLoop、EpollPoller、TcpServer、Buffer
-│   ├── thread/    # ThreadPool（第 2 周）
-│   ├── codec/     # 协议头、Protobuf 编解码（第 2 周）
+│   ├── thread/    # ThreadPool（任务队列 + 条件变量，复用自 cpp_learn）
+│   ├── codec/     # 协议头（24 字节）+ Protobuf 编解码
 │   └── rpc/       # RpcServer、RpcChannel（第 3 周）
 ├── src/
-├── proto/         # .proto 定义（第 2 周）
+├── proto/         # echo.proto / calculator.proto（protoc 生成代码）
 ├── registry/      # 简版注册中心（第 4 周）
 ├── examples/echo/ # echo 示例
 ├── benchmark/     # 压测程序（第 4 周）
@@ -83,3 +93,8 @@ minRPC/
 - [x] TcpServer / TcpConnection 连接管理
 - [x] echo 示例（nc / 自写客户端均可回显）
 - [x] 安装 protobuf / valgrind（用户 sudo 安装，CMake 接入验证通过）
+- [x] ThreadPool（复用 cpp_learn 线程池，接入统一日志）
+- [x] 协议头（魔数/版本/类型/序列号/长度）+ Codec 编解码
+- [x] protoc 接入 CMake（Echo/Calculator proto）
+- [x] codec_test / threadpool_test（粘包半包边界、并发与优先级）
+- [x] echo 并发验证（16 客户端 × 50 消息 = 800 请求，0 失败）
