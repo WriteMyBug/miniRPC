@@ -201,6 +201,7 @@ minRPC/
 - [docs/decisions.md](docs/decisions.md)：关键设计决策记录（D1-D7）
 - [docs/interview-qa.md](docs/interview-qa.md)：面试 Q&A（网络/线程池/Codec/RPC/注册中心/负载均衡/压测）
 - [benchmark/report.md](benchmark/report.md)：压测方法、数据与结论
+- [docs/learning/00-学习计划.md](docs/learning/00-学习计划.md)：20 小时学习计划（大纲/进度/模块详解/验收作业）
 
 ## 当前进度
 
