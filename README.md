@@ -199,9 +199,13 @@ minRPC/
 
 - [计划书.md](计划书.md)：项目定位、里程碑与验收标准（4 周计划已完成）
 - [docs/decisions.md](docs/decisions.md)：关键设计决策记录（D1-D7）
-- [docs/interview-qa.md](docs/interview-qa.md)：面试 Q&A（网络/线程池/Codec/RPC/注册中心/负载均衡/压测）
+- [docs/interview-qa.md](docs/interview-qa.md)：面试 Q&A（按模块）
+- [docs/interview-qa-deep.md](docs/interview-qa-deep.md)：面试追问 QA（按场景，含追问链）
 - [benchmark/report.md](benchmark/report.md)：压测方法、数据与结论
-- [docs/learning/00-学习计划.md](docs/learning/00-学习计划.md)：20 小时学习计划（大纲/进度/模块详解/验收作业）
+- [docs/tutorial/00-索引与学习路径.md](docs/tutorial/00-索引与学习路径.md)：RPC 学习教程（6 章，约 18 小时）
+- [docs/class-reference.md](docs/class-reference.md)：类详解与类关系
+- [docs/resume-summary.md](docs/resume-summary.md)：简历项目描述
+- [docs/project-intro.md](docs/project-intro.md)：项目介绍稿（30 秒/2 分钟/5 分钟）
 
 ## 当前进度
 
