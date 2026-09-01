@@ -1,8 +1,13 @@
 # MiniRPC
 
-面向校招简历的轻量级 C++17 RPC 框架（开发中）。
+轻量级 C++17 RPC 框架。
 
 基于 Linux epoll Reactor 模型、线程池与 Protobuf 序列化，从零实现服务注册/发现、负载均衡、超时重试与压测报告。详见 [计划书.md](计划书.md)。
+
+## 最近更新
+
+- **2026-09-01 · 多 Reactor 升级**：新增 EventLoopPool，连接 IO 轮询分发到多个事件循环线程；200 并发 QPS 约 2.25 万 → 8 万（约 3.5 倍），服务端多核利用率 1.26 → 4.18 核（详见 [benchmark/report.md](benchmark/report.md) 第 6 节）。
+- **2026-08-02 · 四周边计划完成**：网络层 → 线程池/协议 → RPC 核心 → 注册中心/负载均衡/压测，全部验收通过。
 
 ## 功能特性
 
@@ -204,7 +209,7 @@ minRPC/
 - [benchmark/report.md](benchmark/report.md)：压测方法、数据与结论
 - [docs/tutorial/00-索引与学习路径.md](docs/tutorial/00-索引与学习路径.md)：RPC 学习教程（6 章，约 18 小时）
 - [docs/class-reference.md](docs/class-reference.md)：类详解与类关系
-- [docs/resume-summary.md](docs/resume-summary.md)：简历项目描述
+- [docs/resume-summary.md](docs/resume-summary.md)：项目总结
 - [docs/project-intro.md](docs/project-intro.md)：项目介绍稿（30 秒/2 分钟/5 分钟）
 
 ## 当前进度
