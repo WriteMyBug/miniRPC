@@ -70,3 +70,39 @@
 
 Debug 构建对照（4 线程池）：1 并发 3383 QPS / p99 536us，200 并发 20508 QPS —— Release 约快 30-40%。
 
+## 6. 多 Reactor 升级对比（2026-09-01）
+
+### 6.1 背景与改动
+
+单 Reactor 压测发现服务端 CPU 仅约 1.3 核、200 并发吞吐封顶约 2.3 万 QPS——瓶颈在"所有连接 IO 串在一个事件循环"。
+
+升级内容：
+
+- 新增 `EventLoopPool`（[include/minirpc/net/EventLoopPool.h](../include/minirpc/net/EventLoopPool.h)）：N 个 EventLoop 各跑一个线程；
+- `TcpServer` 支持 `setConnectionLoops`：accept 后按轮询把连接分发给子循环，连接表加互斥锁保护跨线程增删；
+- `RpcServer` 新增 `ioThreads` 参数：>0 时自动创建并启动 EventLoopPool（[include/minirpc/rpc/RpcServer.h](../include/minirpc/rpc/RpcServer.h)）。
+
+### 6.2 同机同方法对比（Release，各档总请求 2 万）
+
+| 配置 | 40 并发 QPS | 100 并发 QPS | 200 并发 QPS | 200 并发 P99 |
+|---|---:|---:|---:|---:|
+| 单 Reactor（io=0, pool=4） | 25311 | 23485 | 22549 | 61.3ms |
+| 多 Reactor（io=4, pool=8） | 52763 | 66118 | 69124 | 7.7ms |
+| 多 Reactor（io=8, pool=16） | — | 64731 | 78827（长跑 80000 请求 88580） | 6.5ms |
+
+### 6.3 服务端资源（200 并发 × 400 次 = 80000 请求）
+
+| 指标 | 单 Reactor | 多 Reactor（io=8, pool=16） |
+|---|---|---|
+| CPU | 平均 125.6%（约 1.26 核） | 平均 418.5%（约 4.18 核），峰值 503% |
+| 内存 RSS | 峰值 6.6 MB | 峰值 7.0 MB |
+| QPS | 约 2.3-2.9 万 | 7.3-8.9 万 |
+
+### 6.4 结论
+
+1. **多核利用率提升约 3.3 倍**：服务端实际占用核数 1.26 → 4.18；
+2. **200 并发吞吐提升约 3.5 倍**：2.25 万 → 约 7.9-8.8 万 QPS；
+3. **高并发 P99 显著改善**：200 并发 61ms → 6.5ms（事件分发分摊到多个循环，排队大幅下降）；
+4. io=8/pool=16 为当前最优配置；400 并发（约 7.8 万 QPS）开始出现客户端侧排队长尾。
+
+说明：单 Reactor 的"提升路径"中"多 Reactor"一项已落地；剩余方向（批量唤醒/合并发送、异步客户端、SO_REUSEPORT 多进程）仍为后续优化。

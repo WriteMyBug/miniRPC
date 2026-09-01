@@ -17,12 +17,16 @@
 namespace minirpc {
 
 class EventLoop;
+class EventLoopPool;
 class ThreadPool;
 
 // RPC 服务端：epoll(TcpServer) 收包 -> Codec 拆包 -> 线程池分发 -> Service 调用。
+// ioThreads > 0 时启用多 Reactor：内部创建 EventLoopPool，连接 IO 分发到多个
+// 子事件循环（多核利用）；ioThreads == 0 保持单 Reactor 行为。
 class RpcServer : public Noncopyable {
  public:
-  RpcServer(EventLoop* loop, const InetAddress& listenAddr, std::string name);
+  RpcServer(EventLoop* loop, const InetAddress& listenAddr, std::string name,
+            size_t ioThreads = 0);
   ~RpcServer();
 
   void registerService(google::protobuf::Service* service);
@@ -38,6 +42,7 @@ class RpcServer : public Noncopyable {
                     const google::protobuf::Message& envelope);
 
   EventLoop* loop_;
+  std::unique_ptr<EventLoopPool> ioPool_;  // 多 Reactor 池（ioThreads>0 时创建）
   TcpServer server_;
   ServiceRegistry registry_;
   std::unique_ptr<ThreadPool> pool_;

@@ -63,7 +63,7 @@ class CalculatorServiceImpl : public minirpc::example::CalculatorService {
   }
 };
 
-// 用法：calculator_server [port] [node_name] [pool_threads]
+// 用法：calculator_server [port] [node_name] [pool_threads] [io_threads]
 int main(int argc, char* argv[]) {
   uint16_t port = 8888;
   if (argc > 1) {
@@ -77,11 +77,15 @@ int main(int argc, char* argv[]) {
   if (argc > 3) {
     poolThreads = static_cast<size_t>(std::atoi(argv[3]));
   }
+  size_t ioThreads = 0;  // 0 = 单 Reactor；>0 = 多 Reactor
+  if (argc > 4) {
+    ioThreads = static_cast<size_t>(std::atoi(argv[4]));
+  }
   Logger::instance().setLogLevel(LogLevel::kInfo);
   std::signal(SIGPIPE, SIG_IGN);
 
   EventLoop loop;
-  RpcServer server(&loop, InetAddress(port), "rpc-server");
+  RpcServer server(&loop, InetAddress(port), "rpc-server", ioThreads);
   server.setThreadPoolSize(poolThreads);
   EchoServiceImpl echoService;
   CalculatorServiceImpl calcService;

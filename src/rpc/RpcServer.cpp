@@ -7,6 +7,7 @@
 #include "minirpc/codec/Codec.h"
 #include "minirpc/common/Logger.h"
 #include "minirpc/net/EventLoop.h"
+#include "minirpc/net/EventLoopPool.h"
 #include "minirpc/rpc/RpcController.h"
 #include "minirpc/thread/ThreadPool.h"
 #include "rpc.pb.h"
@@ -14,8 +15,10 @@
 namespace minirpc {
 
 RpcServer::RpcServer(EventLoop* loop, const InetAddress& listenAddr,
-                     std::string name)
+                     std::string name, size_t ioThreads)
     : loop_(loop),
+      ioPool_(ioThreads > 0 ? std::make_unique<EventLoopPool>(ioThreads)
+                            : nullptr),
       server_(loop, listenAddr, std::move(name)),
       pool_(std::make_unique<ThreadPool>()) {
   server_.setMessageCallback(
@@ -42,6 +45,11 @@ void RpcServer::setThreadPoolSize(size_t n) {
 }
 
 void RpcServer::start() {
+  if (ioPool_) {
+    // 先启动子事件循环，再把连接分发目标设置给 TcpServer。
+    ioPool_->start();
+    server_.setConnectionLoops(ioPool_->loops());
+  }
   pool_->SetLogEnabled(false);
   ThreadPoolConfig config;
   config.mode = PoolMode::kFixed;
@@ -50,7 +58,8 @@ void RpcServer::start() {
   config.maxQueueSize = 4096;
   pool_->Start(config);
   server_.start();
-  LOG_INFO << "RpcServer started with " << poolThreads_ << " worker threads";
+  LOG_INFO << "RpcServer started with " << poolThreads_ << " worker threads, "
+           << (ioPool_ ? ioPool_->size() : 0) << " io loop(s)";
 }
 
 void RpcServer::onMessage(const TcpConnectionPtr& conn, Buffer* buffer) {

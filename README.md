@@ -6,7 +6,7 @@
 
 ## 功能特性
 
-- **网络层**：epoll Reactor（LT）+ eventfd 唤醒 + Buffer（粘包/半包处理），单 Reactor 主线程 + 线程池处理业务。
+- **网络层**：epoll Reactor（LT）+ eventfd 唤醒 + Buffer（粘包/半包处理），支持单/多 Reactor（EventLoopPool 多核 IO 分发）+ 线程池处理业务。
 - **协议**：24 字节自定义协议头（魔数/版本/类型/序列号/长度）+ Protobuf 内部信封（RpcRequest/RpcResponse），Codec 与业务解耦。
 - **RPC**：Service 注册表（protobuf 反射分发）、RpcServer、同步 RpcChannel（seq 匹配 + 超时重试）、RpcController（错误码/错误文本）。
 - **注册中心**：Register/Discover/Heartbeat/Unregister，心跳超时剔除（注册中心本身是一个 RPC 服务）。
@@ -162,7 +162,7 @@ sequenceDiagram
 ./build-rel/benchmark/benchmark 127.0.0.1 8888 40 500
 ```
 
-实测（Release，WSL2 本机）：40 并发约 3.16 万 QPS，P99 2.6ms；服务端 CPU 约 1.3 核、内存约 6.6MB。完整数据与方法见 [benchmark/report.md](benchmark/report.md)。
+实测（Release，WSL2 本机）：单 Reactor 40 并发约 3.16 万 QPS、P99 2.6ms；多 Reactor 升级后 200 并发约 7.9-8.8 万 QPS（约 3.5 倍）、P99 6.5ms，服务端多核利用率 1.26 → 4.18 核。完整数据与方法见 [benchmark/report.md](benchmark/report.md)。
 
 ## 测试
 
@@ -231,6 +231,7 @@ minRPC/
 - [x] RpcServiceNode 自动注册 + LoadBalanceChannel 故障转移
 - [x] 双节点故障剔除验收（registry_test 通过）+ 完整演示
 - [x] 压测程序与报告（40 并发 3.16 万 QPS，P99 2.6ms）
+- [x] 多 Reactor 升级（EventLoopPool + 连接分发）：200 并发约 8 万 QPS，CPU 1.26 → 4.18 核
 - [x] docs/interview-qa.md 面试 Q&A
 - [ ] 异步客户端（可选加分项，留待后续）
 

@@ -48,3 +48,15 @@
 - 4 线程池最优：16/8 线程反而更慢（全局队列锁竞争 + notify_all 惊群），实测数据见 benchmark/report.md。
 - 瓶颈在单 Reactor：服务端 CPU 仅约 1.3 核，吞吐峰值 ~3.16 万 QPS；每个响应都要 eventfd 唤醒主循环。
 - 目标达成：Release 下 40 并发 31587 QPS、60 并发内 P99 <= 4.4ms；继续提升走多 Reactor / 批量唤醒 / 异步客户端。
+
+## D8（2026-09-01）多 Reactor 升级
+
+- 决策：新增 `EventLoopPool`（N 个 EventLoop 各跑一个线程），`TcpServer` 按轮询把新连接分发给子循环，`RpcServer` 增加 `ioThreads` 参数；ioThreads=0 保持单 Reactor 行为。
+- 理由：单 Reactor 压测 CPU 仅 1.26 核、200 并发吞吐封顶约 2.3 万 QPS，瓶颈是"所有连接 IO 串在一个事件循环"；多 Reactor 把读/写/唤醒分摊到多核。
+- 关键实现点：
+  1. EventLoop 必须在创建它的线程内运行 loop()，因此每个 loop 在线程内构造（promise 传递指针）；
+  2. 连接表 `connections_` 加互斥锁（主循环插入、子循环删除）；
+  3. 连接移除必须路由回连接所属的子循环（`conn->loop()->runInLoop`），修复了"在主循环断言"的跨线程 bug；
+  4. 析构顺序：先销毁 TcpServer（连接释放时子循环仍存活），再销毁 EventLoopPool。
+- 结果（Release，同机同法）：200 并发 QPS 2.25 万 → 约 8 万（约 3.5 倍）；CPU 占用 1.26 → 4.18 核（约 3.3 倍）；200 并发 P99 61ms → 6.5ms。详见 benchmark/report.md 第 6 节。
+- 代价与后续：连接分发不感知各循环负载（可做动态迁移）；批量唤醒/合并发送、异步客户端、SO_REUSEPORT 多进程仍为后续方向。

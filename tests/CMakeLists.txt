@@ -21,3 +21,7 @@ add_test(NAME loadbalancer_test COMMAND loadbalancer_test)
 add_executable(registry_test registry_test.cpp)
 target_link_libraries(registry_test PRIVATE minirpc)
 add_test(NAME registry_test COMMAND registry_test)
+
+add_executable(multireactor_test multireactor_test.cpp)
+target_link_libraries(multireactor_test PRIVATE minirpc)
+add_test(NAME multireactor_test COMMAND multireactor_test)

@@ -20,6 +20,7 @@ add_library(minirpc
   src/net/Channel.cpp
   src/net/EpollPoller.cpp
   src/net/EventLoop.cpp
+  src/net/EventLoopPool.cpp
   src/net/InetAddress.cpp
   src/net/Socket.cpp
   src/net/TcpConnection.cpp
